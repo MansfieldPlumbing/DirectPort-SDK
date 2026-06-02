@@ -58,7 +58,7 @@ DP_HANDLE port = dp11_open_shared_resource(L"MyTexture", L"MyFence");
 // Producer: signal after rendering
 dp12_signal_fence(port, frame_counter++);
 
-// Consumer: GPU-side wait (preferred — zero CPU involvement, ~170ns PCIe latency)
+// Consumer: Asynchronous GPU-side wait (preferred — zero CPU overhead)
 uint64_t latest = dp12_get_completed_value(port);
 if (latest > last_seen) {
     dp12_queue_wait(port, pCommandQueue, latest);  // GPU hardware wait, CPU returns immediately
@@ -108,7 +108,7 @@ dp12_shutdown();   // or dp11_shutdown()
 |----------|-------------|
 | `void dp12_signal_fence(DP_HANDLE, uint64_t)` | Signal fence on GPU command stream. |
 | `void dp11_signal_fence(DP_HANDLE, uint64_t)` | Signal fence via D3D11 context. |
-| `void dp12_queue_wait(DP_HANDLE, ID3D12CommandQueue*, uint64_t)` | GPU hardware queue wait. CPU returns immediately. ~170ns PCIe latency. Use for all pipeline synchronization. |
+| `void dp12_queue_wait(DP_HANDLE, ID3D12CommandQueue*, uint64_t)` | GPU hardware queue wait. CPU returns immediately. Use for all pipeline synchronization. |
 | `void dp12_cpu_wait(DP_HANDLE, uint64_t)` | CPU-block until fence completes via OS scheduler (1–15ms). Use only for final readback where CPU access is required. |
 | `void dp11_wait_fence(DP_HANDLE, uint64_t)` | GPU hardware queue wait via D3D11 context. Non-blocking CPU. |
 | `uint64_t dp12_get_completed_value(DP_HANDLE)` | Query latest completed fence value (non-blocking). |
