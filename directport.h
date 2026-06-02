@@ -60,7 +60,7 @@ DP_EXPORT void      dp12_signal_fence(DP_HANDLE handle, uint64_t frame_value);
 DP_EXPORT void      dp12_cpu_wait(DP_HANDLE handle, uint64_t target_value);
 
 // GPU command queue waits on fence at hardware level. CPU returns immediately.
-// Preserves 170ns PCIe crossbar fence latency. Zero OS scheduler involvement.
+// Bypasses OS scheduler latency. Used for hardware-pipelined synchronization.
 // USE for all internal GPU-to-GPU pipeline synchronization.
 #ifdef __cplusplus
 DP_EXPORT void      dp12_queue_wait(DP_HANDLE handle, struct ID3D12CommandQueue* pQueue, uint64_t target_value);
@@ -96,8 +96,8 @@ DP_EXPORT DP_HANDLE dp11_create_shared_resource(uint32_t width, uint32_t height,
 DP_EXPORT DP_HANDLE dp11_open_shared_resource(const wchar_t* tex_name, const wchar_t* fence_name);
 
 DP_EXPORT void      dp11_signal_fence(DP_HANDLE handle, uint64_t frame_value);
-// dp11_wait_fence issues a GPU hardware queue wait (non-blocking CPU).
-// Matches the 170ns hardware fence path. See dp12_queue_wait for D3D12 equivalent.
+// GPU command queue waits on fence at hardware level. CPU returns immediately.
+// Bypasses OS scheduler latency. Used for hardware-pipelined synchronization.
 DP_EXPORT void      dp11_wait_fence(DP_HANDLE handle, uint64_t target_value);
 DP_EXPORT void      dp11_close(DP_HANDLE handle);
 
