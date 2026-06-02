@@ -230,7 +230,7 @@ DP_EXPORT void dp12_signal_fence(DP_HANDLE handle, uint64_t frame_value) {
 //                  Incurs OS scheduler latency (1ms–15.6ms quantum).
 //
 // dp12_queue_wait — GPU command queue waits on fence at hardware level.
-//                   Zero CPU involvement. Preserves 170ns PCIe crossbar fence latency.
+//                   Non-blocking CPU execution; chains commands directly on the hardware timeline
 //                   Use for ALL internal pipeline GPU-to-GPU synchronization.
 //
 // The original dp12_wait_fence (CPU block via WaitForSingleObject) is retained
