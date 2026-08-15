@@ -5,6 +5,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <sddl.h>
+#include <string.h>
 #include "directport.h"
 
 #pragma comment(lib, "d3d12.lib")
@@ -18,6 +19,7 @@ extern "C" {
 // multi-card deployments (e.g., two V340L cards, 4 dies total) must refactor to
 // pass ID3D12Device* explicitly at init or handle creation time.
 static ID3D12Device* g_dp12_device = NULL;
+static HRESULT g_dp12_last_hr = S_OK;
 
 typedef struct {
     ID3D12Resource* resource;
@@ -42,8 +44,9 @@ static DXGI_FORMAT GetDXGIFormat(DP_FORMAT fmt) {
 // ----------------------------------------------------------------------------
 DP_EXPORT bool dp12_init(void) {
     if (g_dp12_device) return true; // Already initialized
-    
-    if (FAILED(D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&g_dp12_device)))) {
+
+    g_dp12_last_hr = D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&g_dp12_device));
+    if (FAILED(g_dp12_last_hr)) {
         return false;
     }
     return true;
@@ -92,13 +95,17 @@ DP_EXPORT DP_HANDLE dp12_create_shared_resource(uint32_t width, uint32_t height,
     }
 
     // FIX 3: Propagate HRESULT. On failure, clean up partial state and return NULL.
+    const D3D12_HEAP_FLAGS heap_flags = static_cast<D3D12_HEAP_FLAGS>(
+        D3D12_HEAP_FLAG_SHARED |
+        (is_system_ram ? D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER : D3D12_HEAP_FLAG_NONE));
     HRESULT hr = g_dp12_device->CreateCommittedResource(
         &props,
-        D3D12_HEAP_FLAG_SHARED | (is_system_ram ? D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER : 0),
+        heap_flags,
         &desc,
         D3D12_RESOURCE_STATE_COMMON,
         NULL,
         IID_PPV_ARGS(&state->resource));
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         HeapFree(GetProcessHeap(), 0, state);
         return NULL;
@@ -115,6 +122,7 @@ DP_EXPORT DP_HANDLE dp12_create_shared_resource(uint32_t width, uint32_t height,
 
     // FIX 3 (continued): Check fence and handle creation.
     hr = g_dp12_device->CreateFence(0, D3D12_FENCE_FLAG_SHARED | D3D12_FENCE_FLAG_SHARED_CROSS_ADAPTER, IID_PPV_ARGS(&state->fence));
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         LocalFree(sd);
         state->resource->Release();
@@ -123,6 +131,7 @@ DP_EXPORT DP_HANDLE dp12_create_shared_resource(uint32_t width, uint32_t height,
     }
 
     hr = g_dp12_device->CreateSharedHandle(state->resource, &sa, GENERIC_ALL, tex_name, &state->hSharedTex);
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         LocalFree(sd);
         state->fence->Release();
@@ -132,6 +141,7 @@ DP_EXPORT DP_HANDLE dp12_create_shared_resource(uint32_t width, uint32_t height,
     }
 
     hr = g_dp12_device->CreateSharedHandle(state->fence, &sa, GENERIC_ALL, fence_name, &state->hSharedFence);
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         LocalFree(sd);
         CloseHandle(state->hSharedTex);
@@ -157,12 +167,14 @@ DP_EXPORT DP_HANDLE dp12_open_shared_resource(const wchar_t* tex_name, const wch
     // to OpenSharedHandle. A failed name lookup returns a NULL/invalid handle which
     // will fault on the subsequent OpenSharedHandle call.
     HRESULT hr = g_dp12_device->OpenSharedHandleByName(tex_name, GENERIC_ALL, &state->hSharedTex);
+    g_dp12_last_hr = hr;
     if (FAILED(hr) || state->hSharedTex == NULL) {
         HeapFree(GetProcessHeap(), 0, state);
         return NULL;
     }
 
     hr = g_dp12_device->OpenSharedHandle(state->hSharedTex, IID_PPV_ARGS(&state->resource));
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         CloseHandle(state->hSharedTex);
         HeapFree(GetProcessHeap(), 0, state);
@@ -170,6 +182,7 @@ DP_EXPORT DP_HANDLE dp12_open_shared_resource(const wchar_t* tex_name, const wch
     }
 
     hr = g_dp12_device->OpenSharedHandleByName(fence_name, GENERIC_ALL, &state->hSharedFence);
+    g_dp12_last_hr = hr;
     if (FAILED(hr) || state->hSharedFence == NULL) {
         state->resource->Release();
         CloseHandle(state->hSharedTex);
@@ -178,6 +191,7 @@ DP_EXPORT DP_HANDLE dp12_open_shared_resource(const wchar_t* tex_name, const wch
     }
 
     hr = g_dp12_device->OpenSharedHandle(state->hSharedFence, IID_PPV_ARGS(&state->fence));
+    g_dp12_last_hr = hr;
     if (FAILED(hr)) {
         CloseHandle(state->hSharedFence);
         state->resource->Release();
@@ -254,6 +268,29 @@ DP_EXPORT void dp12_queue_wait(DP_HANDLE handle, ID3D12CommandQueue* pQueue, uin
 
 DP_EXPORT uint64_t dp12_get_completed_value(DP_HANDLE handle) {
     return ((DP12_State*)handle)->fence->GetCompletedValue();
+}
+
+DP_EXPORT bool dp12_get_adapter_luid(int64_t* out_luid) {
+    if (!g_dp12_device || !out_luid) return false;
+    const LUID luid = g_dp12_device->GetAdapterLuid();
+    static_assert(sizeof(luid) == sizeof(*out_luid), "Unexpected LUID size");
+    memcpy(out_luid, &luid, sizeof(luid));
+    return true;
+}
+
+DP_EXPORT int32_t dp12_last_hresult(void) {
+    return static_cast<int32_t>(g_dp12_last_hr);
+}
+
+DP_EXPORT bool dp12_is_uma(void) {
+    if (!g_dp12_device) return false;
+    D3D12_FEATURE_DATA_ARCHITECTURE architecture = {};
+    architecture.NodeIndex = 0;
+    g_dp12_last_hr = g_dp12_device->CheckFeatureSupport(
+        D3D12_FEATURE_ARCHITECTURE,
+        &architecture,
+        sizeof(architecture));
+    return SUCCEEDED(g_dp12_last_hr) && architecture.UMA;
 }
 
 DP_EXPORT void* dp12_get_resource_handle(DP_HANDLE handle) {

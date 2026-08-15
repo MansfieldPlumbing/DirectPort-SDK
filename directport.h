@@ -69,6 +69,11 @@ DP_EXPORT void      dp12_queue_wait(DP_HANDLE handle, struct ID3D12CommandQueue*
 // Returns the current completed fence value.
 DP_EXPORT uint64_t  dp12_get_completed_value(DP_HANDLE handle);
 
+// Returns adapter/capability metadata for managed language bindings.
+DP_EXPORT bool      dp12_get_adapter_luid(int64_t* out_luid);
+DP_EXPORT int32_t   dp12_last_hresult(void);
+DP_EXPORT bool      dp12_is_uma(void);
+
 // Returns the underlying NT Handle for the resource (for external interop).
 DP_EXPORT void*     dp12_get_resource_handle(DP_HANDLE handle);
 

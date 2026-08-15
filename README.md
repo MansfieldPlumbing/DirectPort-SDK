@@ -147,6 +147,12 @@ typedef enum {
 
 **Adapter Pattern**: Domain-specific logic (video conversion, ML tensor binding, OpenGL interop) is intentionally excluded from the core. Adapters consume the `dp12_*`/`dp11_*` APIs to handle format translation, synchronization semantics, and framework integration. Reference implementations exist externally; the core remains minimal and agnostic.
 
+## PowerShell D3D12 object graph
+
+The [`powershell/`](powershell/) prototype exposes DirectPort resources as .NET 11 objects for PowerShell 7.7. Its GPU console keeps the semantic cell graph in PowerShell while D3D12 performs MSDF rasterization into a shared texture. Frame submission is nonblocking: three persistently mapped upload slots absorb the newest packed `uint32` cell state, and a busy slot causes the producer to drop rather than wait.
+
+The included `DEBUG-CANVAS.r6.ps1` demonstrates touch, pan, palette, glyph, grid, noise, resize, idle, shared-handle discovery, and clean teardown using a single mixed assembly. See [`powershell/README.md`](powershell/README.md).
+
 ## License
 
 MIT
